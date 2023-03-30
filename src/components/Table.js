@@ -12,11 +12,12 @@ const Table = ({ cities }) => {
       </thead>
       <tbody>
         { (cities.length > 0) ? cities.map( (city, index) => {
+        console.log(city)
                    return (
                     <tr key={ index }>
                       <td>{ city.id }</td>
                       <td>{ city.name }</td>
-                      <td>{ city.townHall}</td>
+                      <td>"..."</td>
                     </tr>
                   )
                  }) : <tr><td colSpan="5">Loading...</td></tr> }
