@@ -9,14 +9,14 @@ import {
     updateFlight,
     deleteFlight,
     createAirline,
-    createGate
+    createGate,
+    fetchGatesByAirport
 } from '../../services/api';
 import { format } from 'date-fns';
 import './AdminPanel.css';
 
 const { TabPane } = Tabs;
 const { Option } = Select;
-const { RangePicker } = DatePicker;
 
 const AdminPanel = () => {
     const [form] = Form.useForm();
@@ -27,33 +27,54 @@ const AdminPanel = () => {
     const [loading, setLoading] = useState(false);
     const [selectedAirport, setSelectedAirport] = useState(null);
 
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const [
+                airlinesResponse,
+                airportsResponse,
+                gatesResponse,
+                flightsResponse
+            ] = await Promise.all([
+                fetchAirlines(),
+                fetchAirports(),
+                fetchGates(),
+                fetchFlights()
+            ]);
+
+            // Extract data from responses
+            const airlinesData = airlinesResponse.data;
+            const airportsData = airportsResponse.data;
+            const gatesData = gatesResponse.data;
+            const flightsData = flightsResponse.data;
+
+            // Validate and set data
+            setAirlines(Array.isArray(airlinesData) ? airlinesData.filter(a => a?.id && a?.name && a?.code) : []);
+            setAirports(Array.isArray(airportsData) ? airportsData : []);
+            setGates(Array.isArray(gatesData) ? gatesData : []);
+            setFlights(Array.isArray(flightsData) ? flightsData : []);
+
+        } catch (error) {
+            console.error('Error loading data:', error);
+            message.error('Failed to load data');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [airlinesRes, airportsRes, gatesRes, flightsRes] = await Promise.all([
-                    fetchAirlines(),
-                    fetchAirports(),
-                    fetchGates(),
-                    fetchFlights()
-                ]);
-                setAirlines(airlinesRes.data);
-                setAirports(airportsRes.data);
-                setGates(gatesRes.data);
-                setFlights(flightsRes.data);
-            } catch (error) {
-                console.error('Error loading data:', error);
-            }
-        };
         loadData();
     }, []);
 
     const handleAirportChange = async (airportId) => {
-        setSelectedAirport(airportId);
         try {
+            setSelectedAirport(airportId);
             const response = await fetchGatesByAirport(airportId);
-            setGates(response.data);
+            const gatesData = response.data;
+            setGates(Array.isArray(gatesData) ? gatesData : []);
         } catch (error) {
             console.error('Error loading gates:', error);
+            message.error('Failed to load gates');
         }
     };
 
@@ -65,11 +86,9 @@ const AdminPanel = () => {
             await createFlight(values);
             message.success('Flight added successfully');
             form.resetFields();
-
-            // Refresh flights list
-            const response = await fetchFlights();
-            setFlights(response.data);
+            await loadData();
         } catch (error) {
+            console.error('Error creating flight:', error);
             message.error('Failed to add flight');
         }
     };
@@ -78,11 +97,9 @@ const AdminPanel = () => {
         try {
             await createAirline(values);
             message.success('Airline added successfully');
-
-            // Refresh airlines list
-            const response = await fetchAirlines();
-            setAirlines(response.data);
+            await loadData();
         } catch (error) {
+            console.error('Error creating airline:', error);
             message.error('Failed to add airline');
         }
     };
@@ -91,11 +108,9 @@ const AdminPanel = () => {
         try {
             await createGate(values);
             message.success('Gate added successfully');
-
-            // Refresh gates list
-            const response = await fetchGates();
-            setGates(response.data);
+            await loadData();
         } catch (error) {
+            console.error('Error creating gate:', error);
             message.error('Failed to add gate');
         }
     };
@@ -104,13 +119,22 @@ const AdminPanel = () => {
         try {
             await deleteFlight(id);
             message.success('Flight deleted successfully');
-
-            // Refresh flights list
-            const response = await fetchFlights();
-            setFlights(response.data);
+            await loadData();
         } catch (error) {
+            console.error('Error deleting flight:', error);
             message.error('Failed to delete flight');
         }
+    };
+
+    const renderDropdownOptions = (data, label = 'name', sub = 'code') => {
+        if (loading) return <Option disabled>Loading...</Option>;
+        if (!Array.isArray(data) || data.length === 0) return <Option disabled>No options available</Option>;
+
+        return data.map(item => (
+            <Option key={item.id} value={item.id}>
+                {item[label]} ({item[sub]})
+            </Option>
+        ));
     };
 
     const flightColumns = [
@@ -122,17 +146,21 @@ const AdminPanel = () => {
         {
             title: 'Airline',
             key: 'airline',
-            render: (_, record) => `${record.airline.name} (${record.airline.code})`,
+            render: (_, record) => record?.airline ? `${record.airline.name} (${record.airline.code})` : 'N/A',
         },
         {
             title: 'Departure',
             key: 'departure',
-            render: (_, record) => `${record.departureAirport.code} @ ${format(new Date(record.departureTime), 'HH:mm')}`,
+            render: (_, record) => record?.departureAirport?.code
+                ? `${record.departureAirport.code} @ ${format(new Date(record.departureTime), 'HH:mm')}`
+                : 'N/A',
         },
         {
             title: 'Arrival',
             key: 'arrival',
-            render: (_, record) => `${record.arrivalAirport.code} @ ${format(new Date(record.arrivalTime), 'HH:mm')}`,
+            render: (_, record) => record?.arrivalAirport?.code
+                ? `${record.arrivalAirport.code} @ ${format(new Date(record.arrivalTime), 'HH:mm')}`
+                : 'N/A',
         },
         {
             title: 'Status',
@@ -144,7 +172,7 @@ const AdminPanel = () => {
             key: 'actions',
             render: (_, record) => (
                 <Space size="middle">
-                    <Button type="link" onClick={() => handleDeleteFlight(record.id)}>Delete</Button>
+                    <Button type="link" onClick={() => handleDeleteFlight(record?.id)}>Delete</Button>
                 </Space>
             ),
         },
@@ -153,7 +181,7 @@ const AdminPanel = () => {
     return (
         <div className="admin-panel">
             <Tabs defaultActiveKey="1">
-                <TabPane tab="Flights" key="1">
+                <TabPane tab="Flights" key="1" forceRender>
                     <div className="admin-section">
                         <h3>Add New Flight</h3>
                         <Form form={form} onFinish={onFlightFinish} layout="vertical">
@@ -162,42 +190,58 @@ const AdminPanel = () => {
                             </Form.Item>
 
                             <Form.Item name="airlineId" label="Airline" rules={[{ required: true }]}>
-                                <Select>
-                                    {airlines.map(airline => (
-                                        <Option key={airline.id} value={airline.id}>
-                                            {airline.name} ({airline.code})
-                                        </Option>
-                                    ))}
+                                <Select
+                                    loading={loading}
+                                    showSearch
+                                    optionFilterProp="children"
+                                    filterOption={(input, option) =>
+                                        option.children.toLowerCase().includes(input.toLowerCase())
+                                    }
+                                    placeholder="Select an airline"
+                                >
+                                    {renderDropdownOptions(airlines)}
                                 </Select>
                             </Form.Item>
 
                             <Form.Item name="departureAirportId" label="Departure Airport" rules={[{ required: true }]}>
-                                <Select onChange={handleAirportChange}>
-                                    {airports.map(airport => (
-                                        <Option key={airport.id} value={airport.id}>
-                                            {airport.name} ({airport.code})
-                                        </Option>
-                                    ))}
+                                <Select
+                                    loading={loading}
+                                    onChange={handleAirportChange}
+                                    showSearch
+                                    optionFilterProp="children"
+                                    placeholder="Select departure airport"
+                                >
+                                    {renderDropdownOptions(airports)}
                                 </Select>
                             </Form.Item>
 
                             <Form.Item name="arrivalAirportId" label="Arrival Airport" rules={[{ required: true }]}>
-                                <Select>
-                                    {airports.map(airport => (
-                                        <Option key={airport.id} value={airport.id}>
-                                            {airport.name} ({airport.code})
-                                        </Option>
-                                    ))}
+                                <Select
+                                    loading={loading}
+                                    showSearch
+                                    optionFilterProp="children"
+                                    placeholder="Select arrival airport"
+                                >
+                                    {renderDropdownOptions(airports)}
                                 </Select>
                             </Form.Item>
 
                             <Form.Item name="gateId" label="Gate">
-                                <Select>
-                                    {gates.filter(g => g.airport.id === selectedAirport).map(gate => (
-                                        <Option key={gate.id} value={gate.id}>
-                                            {gate.terminal}-{gate.code}
-                                        </Option>
-                                    ))}
+                                <Select
+                                    loading={loading}
+                                    showSearch
+                                    optionFilterProp="children"
+                                    placeholder="Select gate"
+                                >
+                                    {renderDropdownOptions(
+                                        gates.filter(g =>
+                                            selectedAirport
+                                                ? g?.airport?.id === selectedAirport
+                                                : true
+                                        ),
+                                        'terminal',
+                                        'code'
+                                    )}
                                 </Select>
                             </Form.Item>
 
@@ -225,7 +269,7 @@ const AdminPanel = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Button type="primary" htmlType="submit">
+                                <Button type="primary" htmlType="submit" loading={loading}>
                                     Add Flight
                                 </Button>
                             </Form.Item>
@@ -237,13 +281,15 @@ const AdminPanel = () => {
                         <Table
                             dataSource={flights}
                             columns={flightColumns}
-                            rowKey="id"
+                            rowKey={(record) => record?.id || Math.random().toString(36).substr(2, 9)}
                             pagination={{ pageSize: 5 }}
+                            loading={loading}
+                            locale={{ emptyText: 'No flights found' }}
                         />
                     </div>
                 </TabPane>
 
-                <TabPane tab="Airlines" key="2">
+                <TabPane tab="Airlines" key="2" forceRender>
                     <div className="admin-section">
                         <h3>Add New Airline</h3>
                         <Form onFinish={onAirlineFinish} layout="vertical">
@@ -260,7 +306,7 @@ const AdminPanel = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Button type="primary" htmlType="submit">
+                                <Button type="primary" htmlType="submit" loading={loading}>
                                     Add Airline
                                 </Button>
                             </Form.Item>
@@ -271,8 +317,10 @@ const AdminPanel = () => {
                         <h3>All Airlines</h3>
                         <Table
                             dataSource={airlines}
-                            rowKey="id"
+                            rowKey={(record) => record?.id || Math.random().toString(36).substr(2, 9)}
                             pagination={{ pageSize: 5 }}
+                            loading={loading}
+                            locale={{ emptyText: 'No airlines found' }}
                         >
                             <Table.Column title="Name" dataIndex="name" key="name" />
                             <Table.Column title="Code" dataIndex="code" key="code" />
@@ -281,7 +329,7 @@ const AdminPanel = () => {
                     </div>
                 </TabPane>
 
-                <TabPane tab="Gates" key="3">
+                <TabPane tab="Gates" key="3" forceRender>
                     <div className="admin-section">
                         <h3>Add New Gate</h3>
                         <Form onFinish={onGateFinish} layout="vertical">
@@ -294,17 +342,18 @@ const AdminPanel = () => {
                             </Form.Item>
 
                             <Form.Item name="airportId" label="Airport" rules={[{ required: true }]}>
-                                <Select>
-                                    {airports.map(airport => (
-                                        <Option key={airport.id} value={airport.id}>
-                                            {airport.name} ({airport.code})
-                                        </Option>
-                                    ))}
+                                <Select
+                                    loading={loading}
+                                    showSearch
+                                    optionFilterProp="children"
+                                    placeholder="Select airport"
+                                >
+                                    {renderDropdownOptions(airports)}
                                 </Select>
                             </Form.Item>
 
                             <Form.Item>
-                                <Button type="primary" htmlType="submit">
+                                <Button type="primary" htmlType="submit" loading={loading}>
                                     Add Gate
                                 </Button>
                             </Form.Item>
@@ -315,15 +364,20 @@ const AdminPanel = () => {
                         <h3>All Gates</h3>
                         <Table
                             dataSource={gates}
-                            rowKey="id"
+                            rowKey={(record) => record?.id || Math.random().toString(36).substr(2, 9)}
                             pagination={{ pageSize: 5 }}
+                            loading={loading}
+                            locale={{ emptyText: 'No gates found' }}
                         >
                             <Table.Column title="Code" dataIndex="code" key="code" />
                             <Table.Column title="Terminal" dataIndex="terminal" key="terminal" />
                             <Table.Column
                                 title="Airport"
                                 key="airport"
-                                render={(_, record) => `${record.airport.name} (${record.airport.code})`}
+                                render={(_, record) => record?.airport
+                                    ? `${record.airport.name} (${record.airport.code})`
+                                    : 'N/A'
+                                }
                             />
                         </Table>
                     </div>
