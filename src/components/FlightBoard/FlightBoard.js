@@ -1,79 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Select, Button, Tag, Space } from 'antd';
-import { fetchAirports, fetchDepartures, fetchArrivals } from '../../services/api';
+import { fetchAirports, fetchFlights } from '../../services/api';
 import { format } from 'date-fns';
 import './FlightBoard.css';
 
 const { Option } = Select;
 
 const FlightBoard = () => {
-    const [flights, setFlights] = useState([]);
-    const [airports, setAirports] = useState([]);
-    const [selectedAirport, setSelectedAirport] = useState(null);
-    const [view, setView] = useState('departures');
-    const [loading, setLoading] = useState(false);
+    // State hooks for storing data and loading state
+    const [allFlights, setAllFlights] = useState([]); // Stores all flights
+    const [filteredFlights, setFilteredFlights] = useState([]); // Stores filtered flights based on selected airport and view (departures or arrivals)
+    const [airports, setAirports] = useState([]); // Stores all airports
+    const [selectedAirport, setSelectedAirport] = useState(null); // Tracks selected airport
+    const [view, setView] = useState('departures'); // Tracks current view (departures or arrivals)
+    const [loading, setLoading] = useState(false); // Loading state for async requests
 
+    // Fetch airports and flights when component mounts
     useEffect(() => {
-        const loadAirports = async () => {
+        const loadData = async () => {
             try {
-                const response = await fetchAirports();
-                setAirports(response.data);
-                if (response.data.length > 0) {
-                    setSelectedAirport(response.data[0].id);
+                setLoading(true);
+
+                // Fetch airports and flights data
+                const airportsResponse = await fetchAirports();
+                setAirports(airportsResponse.data);
+
+                const flightsResponse = await fetchFlights();
+                setAllFlights(flightsResponse.data);
+
+                // Set the first airport as the default selection
+                if (airportsResponse.data.length > 0) {
+                    setSelectedAirport(airportsResponse.data[0].id);
                 }
             } catch (error) {
-                console.error('Error loading airports:', error);
+                console.error('Error loading data:', error);
+            } finally {
+                setLoading(false);
             }
         };
-        loadAirports();
+        loadData();
     }, []);
 
+    // Filter flights based on selected airport and view
     useEffect(() => {
         if (selectedAirport) {
-            const loadFlights = async () => {
-                setLoading(true);
-                try {
-                    const response = view === 'departures'
-                        ? await fetchDepartures(selectedAirport)
-                        : await fetchArrivals(selectedAirport);
-                    setFlights(response.data);
-                } catch (error) {
-                    console.error('Error loading flights:', error);
-                } finally {
-                    setLoading(false);
-                }
-            };
-            loadFlights();
+            const filtered = allFlights.filter(flight =>
+                view === 'departures'
+                    ? flight.departureAirport?.id === selectedAirport
+                    : flight.arrivalAirport?.id === selectedAirport
+            );
+            setFilteredFlights(filtered);
         }
-    }, [selectedAirport, view]);
+    }, [selectedAirport, view, allFlights]);
 
+    // Function to get a status tag for flights (with colors)
     const getStatusTag = (status) => {
-        let color;
-        switch (status) {
-            case 'SCHEDULED':
-                color = 'blue';
-                break;
-            case 'BOARDING':
-                color = 'orange';
-                break;
-            case 'DEPARTED':
-                color = 'red';
-                break;
-            case 'ARRIVED':
-                color = 'green';
-                break;
-            case 'DELAYED':
-                color = 'purple';
-                break;
-            case 'CANCELLED':
-                color = 'gray';
-                break;
-            default:
-                color = 'blue';
-        }
-        return <Tag color={color}>{status}</Tag>;
+        const statusColors = {
+            SCHEDULED: 'blue',
+            BOARDING: 'orange',
+            DEPARTED: 'red',
+            ARRIVED: 'green',
+            DELAYED: 'purple',
+            CANCELLED: 'gray',
+        };
+        return <Tag color={statusColors[status] || 'blue'}>{status}</Tag>;
     };
 
+    // Columns for the table displaying flight information
     const columns = [
         {
             title: 'Flight',
@@ -83,54 +76,55 @@ const FlightBoard = () => {
         },
         {
             title: 'Airline',
-            dataIndex: ['airline', 'name'],
             key: 'airline',
-            render: (_, record) => `${record.airline.name} (${record.airline.code})`,
+            render: (_, flight) => (
+                flight.airline
+                    ? `${flight.airline.name} (${flight.airline.code})`
+                    : 'N/A'
+            ),
         },
         {
             title: view === 'departures' ? 'To' : 'From',
             key: 'destination',
-            render: (_, record) => (
-                view === 'departures'
-                    ? `${record.arrivalAirport.name} (${record.arrivalAirport.code})`
-                    : `${record.departureAirport.name} (${record.departureAirport.code})`
-            ),
+            render: (_, flight) => {
+                const airport = view === 'departures'
+                    ? flight.arrivalAirport
+                    : flight.departureAirport;
+                return `${airport?.name || 'N/A'} (${airport?.code || 'N/A'})`;
+            },
         },
         {
             title: 'Time',
             key: 'time',
-            render: (_, record) => (
-                view === 'departures'
-                    ? format(new Date(record.departureTime), 'HH:mm')
-                    : format(new Date(record.arrivalTime), 'HH:mm')
+            render: (_, flight) => format(
+                new Date(view === 'departures' ? flight.departureTime : flight.arrivalTime),
+                'HH:mm'
             ),
             width: 80,
         },
         {
             title: 'Gate',
-            dataIndex: ['gate', 'code'],
             key: 'gate',
-            render: (gate) => gate || '-',
+            render: (_, flight) => flight.gate?.code || '-',
             width: 80,
         },
         {
             title: 'Status',
-            dataIndex: 'status',
             key: 'status',
-            render: (status) => getStatusTag(status),
+            render: (_, flight) => getStatusTag(flight.status),
             width: 120,
         },
         {
             title: 'Aircraft',
-            dataIndex: 'aircraftType',
             key: 'aircraftType',
-            render: (type) => type || '-',
+            render: (_, flight) => flight.aircraftType || '-',
         },
     ];
 
     return (
         <div className="flight-board">
             <div className="controls">
+                {/* Dropdown to select an airport */}
                 <Select
                     value={selectedAirport}
                     onChange={setSelectedAirport}
@@ -144,6 +138,7 @@ const FlightBoard = () => {
                     ))}
                 </Select>
 
+                {/* Buttons to switch between Departures and Arrivals view */}
                 <Space style={{ marginLeft: 16 }}>
                     <Button
                         type={view === 'departures' ? 'primary' : 'default'}
@@ -160,8 +155,9 @@ const FlightBoard = () => {
                 </Space>
             </div>
 
+            {/* Table displaying filtered flights */}
             <Table
-                dataSource={flights}
+                dataSource={filteredFlights}
                 columns={columns}
                 rowKey="id"
                 loading={loading}

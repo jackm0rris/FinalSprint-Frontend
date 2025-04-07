@@ -19,6 +19,7 @@ const { TabPane } = Tabs;
 const { Option } = Select;
 
 const AdminPanel = () => {
+    // Form instance and state hooks
     const [form] = Form.useForm();
     const [airlines, setAirlines] = useState([]);
     const [airports, setAirports] = useState([]);
@@ -27,6 +28,7 @@ const AdminPanel = () => {
     const [loading, setLoading] = useState(false);
     const [selectedAirport, setSelectedAirport] = useState(null);
 
+    // Function to load data from APIs (Airlines, Airports, Gates, Flights)
     const loadData = async () => {
         setLoading(true);
         try {
@@ -42,13 +44,12 @@ const AdminPanel = () => {
                 fetchFlights()
             ]);
 
-            // Extract data from responses
+            // Filter and set the response data
             const airlinesData = airlinesResponse.data;
             const airportsData = airportsResponse.data;
             const gatesData = gatesResponse.data;
             const flightsData = flightsResponse.data;
 
-            // Validate and set data
             setAirlines(Array.isArray(airlinesData) ? airlinesData.filter(a => a?.id && a?.name && a?.code) : []);
             setAirports(Array.isArray(airportsData) ? airportsData : []);
             setGates(Array.isArray(gatesData) ? gatesData : []);
@@ -62,10 +63,12 @@ const AdminPanel = () => {
         }
     };
 
+    // Run the loadData function when the component mounts
     useEffect(() => {
         loadData();
     }, []);
 
+    // Handle the change of selected airport and fetch corresponding gates
     const handleAirportChange = async (airportId) => {
         try {
             setSelectedAirport(airportId);
@@ -78,12 +81,26 @@ const AdminPanel = () => {
         }
     };
 
+    // Handle the form submission for adding a new flight
     const onFlightFinish = async (values) => {
         try {
-            values.departureTime = values.departureTime.toISOString();
-            values.arrivalTime = values.arrivalTime.toISOString();
+            const flightData = {
+                ...values,
+                airline: { id: values.airlineId },
+                departureAirport: { id: values.departureAirportId },
+                arrivalAirport: { id: values.arrivalAirportId },
+                gate: values.gateId ? { id: values.gateId } : null,
+                departureTime: values.departureTime.toISOString(),
+                arrivalTime: values.arrivalTime.toISOString()
+            };
 
-            await createFlight(values);
+            // Clean up form data before sending to API
+            delete flightData.airlineId;
+            delete flightData.departureAirportId;
+            delete flightData.arrivalAirportId;
+            delete flightData.gateId;
+
+            await createFlight(flightData);
             message.success('Flight added successfully');
             form.resetFields();
             await loadData();
@@ -93,6 +110,7 @@ const AdminPanel = () => {
         }
     };
 
+    // Handle the form submission for adding a new airline
     const onAirlineFinish = async (values) => {
         try {
             await createAirline(values);
@@ -104,6 +122,7 @@ const AdminPanel = () => {
         }
     };
 
+    // Handle the form submission for adding a new gate
     const onGateFinish = async (values) => {
         try {
             await createGate(values);
@@ -115,6 +134,7 @@ const AdminPanel = () => {
         }
     };
 
+    // Handle the deletion of a flight
     const handleDeleteFlight = async (id) => {
         try {
             await deleteFlight(id);
@@ -126,6 +146,7 @@ const AdminPanel = () => {
         }
     };
 
+    // Function to render dropdown options for select fields
     const renderDropdownOptions = (data, label = 'name', sub = 'code') => {
         if (loading) return <Option disabled>Loading...</Option>;
         if (!Array.isArray(data) || data.length === 0) return <Option disabled>No options available</Option>;
@@ -137,6 +158,7 @@ const AdminPanel = () => {
         ));
     };
 
+    // Table columns for displaying flight data
     const flightColumns = [
         {
             title: 'Flight Number',
@@ -181,6 +203,7 @@ const AdminPanel = () => {
     return (
         <div className="admin-panel">
             <Tabs defaultActiveKey="1">
+                {/* Flights Tab */}
                 <TabPane tab="Flights" key="1" forceRender>
                     <div className="admin-section">
                         <h3>Add New Flight</h3>
@@ -289,6 +312,7 @@ const AdminPanel = () => {
                     </div>
                 </TabPane>
 
+                {/* Airlines Tab */}
                 <TabPane tab="Airlines" key="2" forceRender>
                     <div className="admin-section">
                         <h3>Add New Airline</h3>
@@ -329,6 +353,7 @@ const AdminPanel = () => {
                     </div>
                 </TabPane>
 
+                {/* Gates Tab */}
                 <TabPane tab="Gates" key="3" forceRender>
                     <div className="admin-section">
                         <h3>Add New Gate</h3>
